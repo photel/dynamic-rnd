@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__
+runs
+videos
+*.zip
+ppo_models
+rnd_models
+log
+room_logs
