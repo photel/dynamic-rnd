@@ -1,14 +1,10 @@
-import argparse
-import os
 import random
 import time
 from collections import deque
-from distutils.util import strtobool
 
 # import gymnasium
 import gymnasium as gym
-from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, AtariPreprocessing, ResizeObservation, GrayScaleObservation, FrameStack
-# from gymnasium.experimental.vector import SyncVectorEnv ---- check if better to use this version
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, ResizeObservation, GrayScaleObservation, FrameStack
 from gymnasium.wrappers.normalize import RunningMeanStd
 
 import numpy as np
@@ -18,10 +14,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
-from torch.profiler import profile, record_function, ProfilerActivity
 
-from stable_baselines3.common.atari_wrappers import (  # isort:skip
-    # Check if these just wrap the gym wrappers and make call on using AtariPreprocessing instead
+from stable_baselines3.common.atari_wrappers import (  
     ClipRewardEnv,
     EpisodicLifeEnv,
     FireResetEnv,
@@ -66,9 +60,6 @@ def make_env(env_id, seed=1, idx=0, capture_video=True, run_name='Unnamed_run'):
         env = GrayScaleObservation(env)
         # Stack 4 frames as a single obs to encode temporal information
         env = FrameStack(env, 4)
-
-        # Gymnasium's preprocessor -- would need to handle FIRE start action
-        # env = AtariPreprocessing(env, noop_max=30, frame_skip=4, screen_size=args.ds_dim, terminal_on_life_loss=False, grayscale_obs=True, grayscale_newaxis=False, scale_obs=False)
         
         env.seed(seed)
         env.action_space.seed(seed)
@@ -326,19 +317,6 @@ def get_room_number(ram):
     return ram[3]
 
 
-# def risk_reward_cutoff(dy_sur_error):
-#     '''
-#         Set reward to 0 if below threshold
-#         Arguments:
-#             dy_sur_error: Prediction error from NW module (NumPy array)
-#         Returns:
-#             Array with rewards set to dy_sur_error values or 0 based on the threshold
-#     '''
-#     return np.where(dy_sur_error < args.risk_threshold, dy_sur_error, 0)
-
-# --------------------------------------
-
-
 # RUN -------    
 if __name__ == '__main__':
     args = parse_args()
@@ -353,10 +331,6 @@ if __name__ == '__main__':
         'hyperparameters',
         '|param|value|\n|-|-|\n%s' % ('\n'.join([f'|{key}|{value}|' for key, value in vars(args).items()])),
     )
-
-    # some dummy test data for Tensorboard
-    # for i in range(1000):
-    #     writer.add_scalar('test_loss', i*2, global_step=i)
 
     # Seeding so comparisons can be made across runs
     random.seed(args.seed)

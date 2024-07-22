@@ -125,25 +125,9 @@ def parse_args():
         '--n-init-obs-norm', type=float, default=0,
         help='number of iterations to initialise the observations normalisation parameters'
     )
-    # parser.add_argument(
-    #     '--pred-reset', type=int, default=5_000,
-    #     help='Reset the predictor network final layer every n updates to network'
-    # )
-    # parser.add_argument(
-    #     '--norm-momentum', type=float, default=0.1,
-    #     help='Momentum to control the influence of new min and max values on running estimates in normalisation of behavioural loss tensors'
-    # )
     parser.add_argument(
         '--dw-loss-coef', type=float, default=0.1,
         help='Used to rescale the Deathwatch masked-loss value when combining with overall loss'
-    )
-    parser.add_argument(
-        '--combined-im-scalar', type=float, default=0.5,
-        help='Used to rescale the combined reward bonus'
-    )
-    parser.add_argument(
-        '--risk-threshold', type=float, default=0.6,
-        help='Used to set the threshold below which risks are treated as acceptable (and get set to zero)'
     )
 
 
