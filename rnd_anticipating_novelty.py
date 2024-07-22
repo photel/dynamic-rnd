@@ -237,8 +237,6 @@ class RNDModel(nn.Module):
             param.requires_grad = False
 
     def forward(self, next_obs):
-        # print('++++++++++ next_obs.shape: ', next_obs.shape)
-        # print('++++++++++ self.input_size: ', self.input_size)
         target_feature = self.target(next_obs)
         predict_feature = self.predictor(next_obs)
 
@@ -300,10 +298,8 @@ class DynamicSurprise(nn.Module):
         # Ensure action is right shape & append to value_embedding
         unmatched_dim = 2
         action = action.unsqueeze(unmatched_dim)
-        # print(f'===== value_embedding.shape::: {value_embedding.shape}\n===== action.shape::: {action.shape}')
         # concat the tensors which must match in all but excepted dim
         x = torch.cat((value_embedding, action), dim=unmatched_dim)
-        # print('===== x.shape: ', x.shape)
         # Forward pass
         x = self.dy_sur_net(x)
         return x
@@ -339,7 +335,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     # Use GPU if available
-    device = hardware() #torch.device('cuda' if torch.cuda.is_available() and args.cuda else 'cpu')
+    device = hardware()
 
     # env setup ------------
     envs = gym.vector.SyncVectorEnv(
@@ -347,19 +343,13 @@ if __name__ == '__main__':
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), 'only Discrete action space is supported'
     #  end env setup --------
-
-    # print('Single observation space shape: ', envs.single_observation_space.shape)
-    # print('Single action space shape: ', envs.single_action_space.n)
+    
 
     agent = Agent(envs).to(device)
     rnd_model = RNDModel(4, envs.single_action_space.n).to(device)
     dys_watch = DynamicSurprise().to(device)
     
     # store the concatenated list of parameters from the agent and RND predictor and additional behaviour modules
-    # !!!! use loop instead
-    # combined_parameters = None
-    # for source in [agent, rnd_model.predictor, dys_watch]:
-    #     combined_parameters += list(source.parameters())
     combined_parameters = list(agent.parameters()) + list(rnd_model.predictor.parameters()) + list(dys_watch.parameters())
 
     # note: epsilon is added to denominator for numerical stability
@@ -386,7 +376,7 @@ if __name__ == '__main__':
     intrinsic_rewards = torch.zeros(rollout_size).to(device)
     value_embed_shape = torch.Size([8, 448])
     value_embeds = torch.zeros(rollout_size + value_embed_shape).to(device)
-    dones = torch.zeros(rollout_size).to(device) # !!!! Will need to handle term and trunc separately
+    dones = torch.zeros(rollout_size).to(device)
     ext_values = torch.zeros(rollout_size).to(device)
     int_values = torch.zeros(rollout_size).to(device)
     avg_returns = deque(maxlen=20) # May not need
@@ -422,17 +412,6 @@ if __name__ == '__main__':
             obs_rms.update(next_ob)
             next_ob = []
     print('...end intialisation')
-
-
-    # --------- Inspect env dynamics
-    # print('num_updates: ', num_updates)
-    # print('next_obs.shape - [num_envs, obs_space_shape]: ', next_obs.shape)
-    # print('CNN output: ', agent.cnn(next_obs).shape)
-    # print('agent.get_value(next_obs) - value per env: ', agent.get_value(next_obs))
-    # print('agent.get_value(next_obs).shape: ', agent.get_value(next_obs).shape)
-
-    # print('agent.get_action_and_value(next_obs): ', agent.get_action_and_value(next_obs))
-    # ---------------
 
 
     # Network parameter updates
@@ -483,10 +462,8 @@ if __name__ == '__main__':
             # Stepping the environment
             # Note that we transfer the env from GPU to CPU to do the step
             next_obs, reward, term, trunc, info = envs.step(action.cpu().numpy())
-            # print(f'reward: {reward}, term: {term}, trunc: {trunc}, info: {info}')
 
             # Set done for an update if env terminates OR truncates
-            # !!! Truncate is for time-limited environements - we should only treat term as done - not using time-limits so can ignore for now !!!
             done_signals = zip(term, trunc)
             done = [a or b for a, b in done_signals]
 
@@ -519,13 +496,10 @@ if __name__ == '__main__':
 
             # Env dynamics module predictions
             dy_sur_pred = dys_watch(agent.value_embedding.unsqueeze(0), action.unsqueeze(0)).squeeze()
-            # Convert term array from boolean to int & reshape to match dy_sur_pred
-            # next_state_terminal = term.astype(int).reshape(-1, 1) # !!!!May need to use env.ale.lives() instead but won't generalise - terminal only catches end of episode
 
             # Get the MSE to generate the reward bonus
             # rnd_pred_error = target_next_feature - predict_next_feature
             rnd_pred_error = target_next_feature - predict_next_feature
-            # dy_sur_pred_error = np.sqrt(np.square(target_next_feature - dy_sur_pred)).squeeze(0)
             dy_sur_pred_error = target_next_feature - dy_sur_pred
 
             rnd_pred_error = rnd_pred_error.cpu().detach().numpy()
@@ -533,20 +507,9 @@ if __name__ == '__main__':
 
             # Generate a weighted ds error
             dy_sur_err_weighted = dy_sur_pred_error * args.dw_loss_coef
-            # print(f'::::: dy_sur_pred_error {dy_sur_pred_error}')
-            # print(f'::::: dy_sur_err_weighted {dy_sur_err_weighted}')
-            # print(f'rnd_pred_error.shape::::: {rnd_pred_error.shape}')
-            # print(f'dy_sur_pred_error.shape::::: {dy_sur_pred_error.shape}')
-            # print(f'rnd_pred_error::::: {rnd_pred_error}')
             combined_intrinsic_error = rnd_pred_error + dy_sur_err_weighted
-            # print(f'combined_intrinsic_error.shape::::: {combined_intrinsic_error.shape}')
-            # print(f'combined_intrinsic_error::::: {combined_intrinsic_error}')
             ie_tensor = torch.from_numpy(combined_intrinsic_error)
             intrinsic_rewards[step] = ((ie_tensor).pow(2).sum(1) / 2).data
-
-
-
-            # print(f'intrinsic_rewards[step]::::: {intrinsic_rewards[step]}')
 
             # ------ LOGGING ------
             # Check for any steps that returned done
@@ -557,7 +520,6 @@ if __name__ == '__main__':
                         if item == 'final_info':
                             for item_data in info[item]:
                                 if item_data and 'episode' in item_data.keys():
-                                    # print(f"global_step={global_step}, episodic_return={item_data['episode']['r']}")
                                     global_episode_count += 1
                                     writer.add_scalar('charts/episodic_return', item_data['episode']['r'], global_step)
                                     writer.add_scalar('charts/episodic_length', item_data['episode']['l'], global_step)
@@ -577,12 +539,10 @@ if __name__ == '__main__':
                                         room_logfile = f'./room_logs/{run_name}/rooms.log'
                                         with open(room_logfile, 'a') as f:
                                             f.write(f'Episode {env_episode_counts[idx]} (env {idx}): {room_visits_str}\n')
-                                        # writer.add_text('RoomIDsPerEpisode', room_visits_str, env_episode_counts[idx])
-                                        # room_visits[idx].clear()
                     
                                     break
             
-            # Save model
+            # Save model - re-enable this for model saving
             # if (global_step > 0 and global_step % 1000_000 == 0) or (global_step == args.num_steps - 5000):
             #     subdirectories = [run_name, f'step_{global_step}']
             #     path_str = create_subdirectories('rnd_models', subdirectories)
@@ -659,34 +619,26 @@ if __name__ == '__main__':
         # flatten the batch data
         b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
-        # print('>>>>> actions.shape: ', actions.shape)
         b_actions_basic = actions.reshape(-1)
         b_actions = actions.reshape((-1,) + envs.action_space.shape)
-        # print('>>>>> b_actions.shape: ', b_actions.shape)
         b_ext_advantages = ext_advantages.reshape(-1)
         b_int_advantages = int_advantages.reshape(-1)
         b_ext_returns = ext_returns.reshape(-1)
         b_int_returns = int_returns.reshape(-1)
         b_ext_values = ext_values.reshape(-1)
         b_value_embeds = value_embeds.reshape((-1,) + (8, 448)) # Batched value embeddings
-        # print('>>>>> b_value_embeds.shape:', b_value_embeds.shape)
-        b_dones = dones.reshape(-1)
 
         b_advantages = b_int_advantages * args.int_coef + b_ext_advantages * args.ext_coef
 
         # Update observation running mean & std from batched observations
         obs_rms.update(b_obs[:, 3, :, :].reshape(-1, 1, args.ds_dim, args.ds_dim).cpu().numpy())
 
-        # print('[Batch size, Env count]: ', b_obs.shape)
-
         # ---- Optimizing the policy and value network
         # For training we need all of the indices of the batch
         b_inds = np.arange(args.batch_size)
 
         # From the batch we need the standardised, clipped observation for the RND module
-        # print('>>>>> b_obs.shape: ', b_obs.shape)
         b_obs_reshape = b_obs[:, 3, :, :].reshape(-1, 1, args.ds_dim, args.ds_dim)
-        # print('>>>>> b_obs_reshape.shape: ', b_obs_reshape.shape)
 
         if device == 'mps':
             b_obs_std = (b_obs_reshape - torch.from_numpy(obs_rms.mean).to(device, dtype=torch.float32)) / torch.sqrt(torch.from_numpy(obs_rms.var).to(device, dtype=torch.float32))
@@ -694,7 +646,6 @@ if __name__ == '__main__':
             b_obs_std = (b_obs_reshape - torch.from_numpy(obs_rms.mean).to(device)) / torch.sqrt(torch.from_numpy(obs_rms.var).to(device))
 
         rnd_next_obs = ((b_obs_std).clip(-5, 5)).float()
-        # print('>>>>> rnd_next_obs.shape: ', rnd_next_obs.shape)
         clipfracs = [] # Use this for logging frequency of clipping
         for epoch in range(args.update_epochs):
             # Shuffle the batch indices for each training update epoch
@@ -707,9 +658,6 @@ if __name__ == '__main__':
                 # ---------- Apply RND model to a batch of observations and return features for both the predictor and target networks
                 predict_next_state_feature, target_next_state_feature = rnd_model(rnd_next_obs[mb_inds])
                 
-                # print('>>>>> rnd_next_obs.shape[mb_inds]: ', rnd_next_obs[mb_inds].shape)
-                # print('>>>>> predict_next_state_feature.shape: ', predict_next_state_feature.shape)
-                # print('>>>>> target_next_state_feature.shape: ', target_next_state_feature.shape)
                 # Get MSE loss between the predictor and target features
                 # .detach() target features from the computation graph, as these features should not be part of the backprop gradient update
                 # reduction=none means that instead of computing a single scalar loss value for the entire batch MSE loss is calculated separately for each item in the batch, yielding a tensor of loss values. The .mean() across the elements of each observation in the batch is then computed, returning a scalar value for each.
@@ -718,21 +666,14 @@ if __name__ == '__main__':
                 ).mean(-1)
                 
                 # Behaviour module predictions
-                # print('>>>> b_value_embeds[mb_inds].shape:', b_value_embeds[mb_inds].shape)
-                # print('>>>> b_actions[mb_inds].shape:', b_actions[mb_inds].shape)
                 dyna_surp_pred = dys_watch(b_value_embeds[mb_inds], b_actions[mb_inds])
-                # print('>>>> dyna_surp_pred.shape:', dyna_surp_pred.shape)
-                # print('>>>> actions[mb_inds].shape:', actions[mb_inds].shape)
-                # print('>>>> dones[mb_inds].shape:', dones[mb_inds].shape)
                 # Get prediction loss
                 target_next_state_feature_expanded = target_next_state_feature.unsqueeze(1).expand(-1, dyna_surp_pred.size(1), -1)
 
                 dyna_surp_loss = F.mse_loss(
                     dyna_surp_pred, target_next_state_feature_expanded.detach(), reduction="none"
                 ).mean(-1)
-                
-                # print('>>>>> forward_loss.shape: ', forward_loss.shape)
-                # print('>>>>> dyna_surp_loss.shape: ', dyna_surp_loss.shape)
+
                 dyna_surp_loss = dyna_surp_loss.reshape(-1)
                 mask = torch.rand(len(forward_loss), device=device)
                 dy_sur_mask = torch.rand(len(dyna_surp_loss), device=device)
@@ -810,9 +751,7 @@ if __name__ == '__main__':
                 # Entropy here measures the disorder in the action probability distribution - maximising entropy encourages exploration
                 entropy_loss = entropy.mean()
                 # Final loss is a sum of policy loss, weighted value loss, forward loss between the RND predictor and target nets, less the weighted entropy loss combined with the dyna_surp_loss.
-                # print(f'----- LOSSES -----  \n >>>> forward_loss: {forward_loss} \n >>>> dyna_surp_loss: {dyna_surp_loss} \n >>>> pg_loss: {pg_loss} \n >>>> entropy_loss: {entropy_loss} \n >>>> v_loss: {v_loss}')
-                # print(f'----- LOSS Coefs -----  \n >>>> entropy: {args.ent_coef} \n >>>> value: {args.vf_coef}')
-                loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef + forward_loss + dyna_surp_loss #* args.dw_loss_coef can add scaling!!!!
+                loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef + forward_loss + dyna_surp_loss
 
                 # zero out the gradients before each optimization step to avoid them being accumulated across multiple batches
                 optimiser.zero_grad()
