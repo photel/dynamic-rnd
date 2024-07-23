@@ -1,13 +1,10 @@
-import argparse
-import os
 import random
 import time
-from distutils.util import strtobool
 
 # import gymnasium
 import gymnasium as gym
-from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, AtariPreprocessing, ResizeObservation, GrayScaleObservation, FrameStack
-from gymnasium.experimental.vector import SyncVectorEnv
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, ResizeObservation, GrayScaleObservation, FrameStack
+# from gymnasium.experimental.vector import SyncVectorEnv
 
 import numpy as np
 import torch
@@ -60,9 +57,6 @@ def make_env(env_id, seed=1, idx=0, capture_video=True, run_name='Unnamed_run'):
         env = GrayScaleObservation(env)
         # Stack 4 frames as a single obs to encode temporal information
         env = FrameStack(env, 4)
-
-        # Gymnasium's preprocessor -- would need to handle FIRE start action
-        # env = AtariPreprocessing(env, noop_max=30, frame_skip=4, screen_size=42, terminal_on_life_loss=False, grayscale_obs=True, grayscale_newaxis=False, scale_obs=False)
         
         env.seed(seed)
         env.action_space.seed(seed)
@@ -92,8 +86,6 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 class Agent(nn.Module):
     def __init__(self, envs):
         super(Agent, self).__init__()
-
-        input_dims = np.array(envs.single_observation_space.shape).prod()
 
         self.cnn = nn.Sequential(
             layer_init(nn.Conv2d(4, 32, 8, stride=4)),
@@ -182,7 +174,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     # Use GPU if available
-    device = hardware()#torch.device('cuda' if torch.cuda.is_available() and args.cuda else 'cpu')
+    device = hardware()
 
     # env setup ------------
     envs = gym.vector.SyncVectorEnv(
@@ -191,8 +183,6 @@ if __name__ == '__main__':
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
     #  end env setup --------
 
-    # print('Single observation space shape: ', envs.single_observation_space.shape)
-    # print('Single action space shape: ', envs.single_action_space.n)
 
     agent = Agent(envs).to(device)
     # epsilon is added to denomintor to prevent 0-division errors
@@ -207,7 +197,7 @@ if __name__ == '__main__':
     dones = torch.zeros(rollout_size).to(device)
     values = torch.zeros(rollout_size).to(device)
 
-    # ------ Avoid changing
+
     # Track combined steps across all environments
     global_step = 0
     global_episode_count = 0
@@ -218,15 +208,7 @@ if __name__ == '__main__':
     # Store initial termination condition as False
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
-
-    # --------- Inspect env dynamics
-    # print('num_updates: ', num_updates)
-    # print('next_obs.shape - [num_envs, obs_space_shape]: ', next_obs.shape)
-    # print('CNN output: ', agent.cnn(next_obs).shape)
-    # print('agent.get_value(next_obs) - value per env: ', agent.get_value(next_obs))
-    # print('agent.get_value(next_obs).shape: ', agent.get_value(next_obs).shape)
-
-    # print('agent.get_action_and_value(next_obs): ', agent.get_action_and_value(next_obs))
+    
 
     for update in range(1, num_updates+1):
         # Learning rate annealing based on input flag
@@ -274,7 +256,6 @@ if __name__ == '__main__':
                 if item == 'final_info':
                     for item_data in info[item]:
                         if item_data and 'episode' in item_data.keys():
-                            # print(f"global_step={global_step}, episodic_return={item_data['episode']['r']}")
                             global_episode_count += 1
                             writer.add_scalar('charts/episodic_return', item_data['episode']['r'], global_step)
                             writer.add_scalar('charts/episodic_length', item_data['episode']['l'], global_step)
@@ -325,8 +306,6 @@ if __name__ == '__main__':
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
-
-        # print('[Batch size, Env count]: ', b_obs.shape)
 
         # Optimizing the policy and value network
         # For training we need all of the indices of the batch
@@ -406,7 +385,7 @@ if __name__ == '__main__':
                 # Update the network weights
                 optimiser.step()
                 
-                # Epoch count is not global so checkpoints may not be feasible
+                # Save model
                 # if global_epochs > 0 and global_epochs % 1000 == 0:
                 #     torch.save({'epoch': epoch,
                 #                 'model_state_dict': agent.state_dict(),
