@@ -1,14 +1,10 @@
-import argparse
-import os
 import random
 import time
 from collections import deque
-from distutils.util import strtobool
 
 # import gymnasium
 import gymnasium as gym
-from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, AtariPreprocessing, ResizeObservation, GrayScaleObservation, FrameStack
-# from gymnasium.experimental.vector import SyncVectorEnv ---- check if better to use this version
+from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo, ResizeObservation, GrayScaleObservation, FrameStack
 from gymnasium.wrappers.normalize import RunningMeanStd
 
 import numpy as np
@@ -19,8 +15,7 @@ import torch.optim as optim
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 
-from stable_baselines3.common.atari_wrappers import (  # isort:skip
-    # Check if these just wrap the gym wrappers and make call on using AtariPreprocessing instead
+from stable_baselines3.common.atari_wrappers import (
     ClipRewardEnv,
     EpisodicLifeEnv,
     FireResetEnv,
@@ -288,10 +283,6 @@ if __name__ == '__main__':
         '|param|value|\n|-|-|\n%s' % ('\n'.join([f'|{key}|{value}|' for key, value in vars(args).items()])),
     )
 
-    # some dummy test data for Tensorboard
-    # for i in range(1000):
-    #     writer.add_scalar('test_loss', i*2, global_step=i)
-
     # Seeding so comparisons can be made across runs
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -299,7 +290,7 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     # Use GPU if available
-    device = hardware() #torch.device('cuda' if torch.cuda.is_available() and args.cuda else 'cpu')
+    device = hardware()
 
     # env setup ------------
     envs = gym.vector.SyncVectorEnv(
@@ -308,8 +299,6 @@ if __name__ == '__main__':
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), 'only Discrete action space is supported'
     #  end env setup --------
 
-    # print('Single observation space shape: ', envs.single_observation_space.shape)
-    # print('Single action space shape: ', envs.single_action_space.n)
 
     agent = Agent(envs).to(device)
     rnd_model = RNDModel(4, envs.single_action_space.n).to(device)
@@ -375,17 +364,6 @@ if __name__ == '__main__':
     print('...end intialisation')
 
 
-    # --------- Inspect env dynamics
-    # print('num_updates: ', num_updates)
-    # print('next_obs.shape - [num_envs, obs_space_shape]: ', next_obs.shape)
-    # print('CNN output: ', agent.cnn(next_obs).shape)
-    # print('agent.get_value(next_obs) - value per env: ', agent.get_value(next_obs))
-    # print('agent.get_value(next_obs).shape: ', agent.get_value(next_obs).shape)
-
-    # print('agent.get_action_and_value(next_obs): ', agent.get_action_and_value(next_obs))
-    # ---------------
-
-
     # Network parameter updates
     for update in range(1, num_updates+1):
         # Learning rate annealing based on input flag
@@ -431,10 +409,8 @@ if __name__ == '__main__':
             # Stepping the environment
             # Note that we transfer the env from GPU to CPU to do the step
             next_obs, reward, term, trunc, info = envs.step(action.cpu().numpy())
-            # print(f'reward: {reward}, term: {term}, trunc: {trunc}, info: {info}')
 
             # Set done for an update if env terminates OR truncates
-            # !!! Truncate is for time-limited environements - we should only treat term as done - not using time-limits so can ignore for now !!!
             done_signals = zip(term, trunc)
             done = [a or b for a, b in done_signals]
 
@@ -478,7 +454,6 @@ if __name__ == '__main__':
                         if item == 'final_info':
                             for item_data in info[item]:
                                 if item_data and 'episode' in item_data.keys():
-                                    # print(f"global_step={global_step}, episodic_return={item_data['episode']['r']}")
                                     global_episode_count += 1
                                     writer.add_scalar('charts/episodic_return', item_data['episode']['r'], global_step)
                                     writer.add_scalar('charts/episodic_length', item_data['episode']['l'], global_step)
@@ -501,7 +476,7 @@ if __name__ == '__main__':
 
                                     break
             
-            # Save model
+            # Save model - re-enable for model saving
             # if (global_step > 0 and global_step % 1000_000 == 0) or (global_step == args.num_steps - 5000):
             #     subdirectories = [run_name, f'step_{global_step}']
             #     path_str = create_subdirectories('rnd_models', subdirectories)
@@ -589,8 +564,6 @@ if __name__ == '__main__':
 
         # Update observation running mean & std from batched observations
         obs_rms.update(b_obs[:, 3, :, :].reshape(-1, 1, args.ds_dim, args.ds_dim).cpu().numpy())
-
-        # print('[Batch size, Env count]: ', b_obs.shape)
 
         # ---- Optimizing the policy and value network
         # For training we need all of the indices of the batch
