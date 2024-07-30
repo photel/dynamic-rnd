@@ -399,7 +399,7 @@ if __name__ == '__main__':
 
 
     print('Start initialising observation normalisation parameter...')
-    # during this phase take random actions and store the observations to intialise obs_rms, which is used in normalising observations - this is needed to stabilise the RND error
+    # during this phase take random actions and store the observations to intialise obs_rms, which is used in normalising observations - this is used to stabilise the RND error.
     next_ob = []
     for step in range(args.num_steps * args.n_init_obs_norm):
         acs = np.random.randint(0, envs.single_action_space.n, size=(args.num_envs,))

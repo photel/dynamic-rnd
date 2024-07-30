@@ -122,7 +122,7 @@ def parse_args():
         help='Intrinsic reward discount rate'
     )
     parser.add_argument(
-        '--n-init-obs-norm', type=float, default=0,
+        '--n-init-obs-norm', type=float, default=50,
         help='number of iterations to initialise the observations normalisation parameters'
     )
     parser.add_argument(
